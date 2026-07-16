@@ -11,6 +11,7 @@ from sqlalchemy import (
     Float,
     DateTime,
     Enum,
+    Integer,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -95,6 +96,12 @@ class User(Base):
         default=True,
         nullable=False,
     )
+
+    reset_token_version: Mapped[int] = mapped_column(
+    Integer,
+    default=0,
+    nullable=False,
+)
 
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),

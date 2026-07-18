@@ -99,8 +99,13 @@ class User(Base):
 
     reset_token_version: Mapped[int] = mapped_column(
     Integer,
-    default=0,
+    server_default= "0",
     nullable=False,
+)
+    
+    profile_photo_url: Mapped[str | None] = mapped_column(
+    String(500),
+    nullable=True,
 )
 
     created_at: Mapped[DateTime] = mapped_column(

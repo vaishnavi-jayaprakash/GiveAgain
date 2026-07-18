@@ -59,7 +59,16 @@ class UserRepository:
         self.db.refresh(user)
 
         return user
+    
+    def update_profile(self,*,user: User, data: dict)->User:
+
+        for field,val in data:
+            setattr(user,field,val)
+
+        return self.save(user)
+
     def save(self, user: User) -> User:
         self.db.commit()
         self.db.refresh(user)
         return user
+    

@@ -10,17 +10,26 @@ from app.core.security import (
     create_refresh_token,
     create_reset_token,
     decode_token,
+    create_email_verification_token,
 )
 
 from app.models.enums import AccountType
 from app.models.users import User
+from app.schemas.auth import UserUpdateRequest
+
 from app.repositories.user_repository import UserRepository
-from app.core.security import create_email_verification_token
+from app.repositories.ngo_profile_repository import NGOProfileRepository
+
 
 class AuthService:
 
-    def __init__(self, repository: UserRepository):
-        self.repository = repository
+    def __init__(
+        self,
+        user_repository: UserRepository,
+        ngo_repository: NGOProfileRepository,
+    ):
+        self.user_repository = user_repository
+        self.ngo_repository = ngo_repository
 
     # --------------------------------------------------
     # Signup
@@ -38,9 +47,12 @@ class AuthService:
         pincode: str,
         lat: float | None,
         lng: float | None,
+        dharpan_id: str | None = None,
+        cert_doc_url: str | None = None,
+        reg_doc_url: str | None = None,
     ) -> User:
 
-        existing = self.repository.get_by_email(email)
+        existing = self.user_repository.get_by_email(email)
 
         if existing:
             raise HTTPException(
@@ -48,9 +60,31 @@ class AuthService:
                 detail="Email already registered",
             )
 
+        if account_type == AccountType.NGO:
+
+            if not all(
+                [
+                    dharpan_id,
+                    cert_doc_url,
+                    reg_doc_url,
+                ]
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="NGO registration details are required.",
+                )
+
+            if self.ngo_repository.get_by_dharpan_id(
+                dharpan_id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Dharpan ID already registered.",
+                )
+
         password_hash = hash_password(password)
 
-        user = self.repository.create(
+        user = self.user_repository.create(
             email=email,
             hashed_password=password_hash,
             account_type=account_type,
@@ -61,15 +95,26 @@ class AuthService:
             lat=lat,
             lng=lng,
         )
+
+        if account_type == AccountType.NGO:
+
+            self.ngo_repository.create(
+                user_id=user.id,
+                dharpan_id=dharpan_id,
+                cert_doc_url=cert_doc_url,
+                reg_doc_url=reg_doc_url,
+            )
+
         verification_token = create_email_verification_token(
-        {
-            "sub": str(user.id)
-        }
+            {
+                "sub": str(user.id)
+            }
         )
 
         print(
             f"http://localhost:5173/verify-email?token={verification_token}"
         )
+
         return user
 
     # --------------------------------------------------
@@ -83,7 +128,7 @@ class AuthService:
         password: str,
     ):
 
-        user = self.repository.get_by_email(email)
+        user = self.user_repository.get_by_email(email)
 
         if user is None:
             raise HTTPException(
@@ -99,11 +144,13 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid credentials",
             )
+
         if not user.is_email_verified:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Please verify your email before logging in.",
             )
+
         access_token = create_access_token(
             {
                 "sub": str(user.id),
@@ -147,7 +194,7 @@ class AuthService:
                 detail="Invalid refresh token",
             )
 
-        user = self.repository.get_by_id(
+        user = self.user_repository.get_by_id(
             UUID(payload["sub"])
         )
 
@@ -174,7 +221,7 @@ class AuthService:
         email: str,
     ) -> str | None:
 
-        user = self.repository.get_by_email(email)
+        user = self.user_repository.get_by_email(email)
 
         if user is None:
             return None
@@ -212,7 +259,7 @@ class AuthService:
                 detail="Invalid reset token",
             )
 
-        user = self.repository.get_by_id(
+        user = self.user_repository.get_by_id(
             UUID(payload["sub"])
         )
 
@@ -230,13 +277,14 @@ class AuthService:
 
         password_hash = hash_password(new_password)
 
-        self.repository.update_password(
+        self.user_repository.update_password(
             user=user,
             new_hashed_password=password_hash,
         )
 
         user.reset_token_version += 1
-        self.repository.save(user)
+
+        self.user_repository.save(user)
 
     # --------------------------------------------------
     # Change Password (Authenticated User)
@@ -261,15 +309,19 @@ class AuthService:
 
         password_hash = hash_password(new_password)
 
-        self.repository.update_password(
+        self.user_repository.update_password(
             user=user,
             new_hashed_password=password_hash,
         )
 
+    # --------------------------------------------------
+    # Verify Email
+    # --------------------------------------------------
+
     def verify_email(
-    self,
-    token: str,
-):
+        self,
+        token: str,
+    ):
 
         try:
             payload = decode_token(token)
@@ -286,7 +338,7 @@ class AuthService:
                 detail="Invalid verification token",
             )
 
-        user = self.repository.get_by_id(
+        user = self.user_repository.get_by_id(
             UUID(payload["sub"])
         )
 
@@ -304,4 +356,4 @@ class AuthService:
 
         user.is_email_verified = True
 
-        self.repository.save(user)
+        self.user_repository.save(user)

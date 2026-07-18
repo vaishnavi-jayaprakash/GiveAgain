@@ -6,6 +6,7 @@ from enum import Enum
 class AccountType(str, Enum):
     NGO = "NGO"
     DONOR = "DONOR"
+    ADMIN = "ADMIN"
 
 
 class ListingCondition(str, Enum):
